@@ -1,0 +1,303 @@
+---
+title: "titanic_2"
+author: "M Hassan"
+date: "Tuesday, November 03, 2015"
+output: html_document
+---
+
+This is tutorial 2 for titanic's passenger data analysis 
+
+##### Loading data
+
+```{r}
+train <- read.csv("train.csv", header = TRUE, stringsAsFactors = FALSE)
+test <- read.csv("test.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+Let's take a quick look
+
+```{r, echo=FALSE}
+str(train)
+```
+
+Vector of fates of passengers in the training set
+
+```{r}
+table(train$Survived)
+```
+The table command is one of the most basic summary statistics functions in R, it runs through the vector you gave it and simply counts the occurrence of each value in it. We see that in the training set, 342 passengers survived, while 549 died. How about a proportion? Well, we can send the output of one function into another. So now give prop.table() the output of the table function as input:
+
+```{r}
+prop.table(table(train$Survived))
+```
+
+Let's create a vector of simulated survivals by generating random numbers between 0 and 1 for 468 records
+as test data
+```{r}
+# create an sample vector of 0 for 468 records
+v <- rep(0, 418)
+
+# This function returns a rample value between 0 and 1
+set.seed(10)
+getSampleVec <- function(v) {
+                v <- sample(0:1,1)
+                return(v)
+            }
+# create a sample vector containing 468 random valeus between 0 and 1 for survived or not
+sampleSurvived <- sapply(v,getSampleVec)
+```
+
+Add the sampleSurvived to test.csv and submit it
+Our prediction is simply generating random values [0,1]. Very naive way of prediction by smply guessing.
+
+```{r}
+testSimple <- test
+
+# assign newly randomly generated vector of survivals to file to be submitted
+testSimple$Survived <- sampleSurvived
+```
+We need to submit a csv file with the PassengerId as well as our Survived predictions to Kaggle. So let’s extract those two columns from the test dataframe, store them in a new container, and then send it to an output file:
+
+```{r}
+submit <- data.frame(PassengerId = testSimple$PassengerId, Survived = testSimple$Survived)
+write.csv(submit, file = "randomlySurvOrDie.csv", row.names = FALSE)
+```
+
+Oh man, that was terrible! We’re close to dead last! Relax, this tutorial was meant to get you comfortable with moving around R and RStudio. I guarantee by the time this series of lessons is done, you’ll be much closer to the other end of the board. If nothing else, we’ve noticed that we have 45% of our predictions correct. This is pretty close to the amount we should have expected from the original prop.table that we ran. Next lesson, we will look at drilling down into the other available variables for some more insights to improve our accuracy
+
+#### New model
+
+In the previous lesson, we covered the basics of navigating data in R, but only looked at the target variable as a predictor. Now it’s time to try and use the other variables in the dataset to predict the target more accurately. The disaster was famous for saving “women and children first”, so let’s take a look at the Sex and Age variables to see if any patterns are evident. We’ll start with the gender of the passengers. After reloading the data into R, take a look at the summary of this variable:
+
+```{r}
+table(train$Sex)
+```
+
+So we see that the majority of passengers were male. Now let’s expand the proportion table command we used last time to do a two-way comparison on the number of males and females that survived:
+
+```{r}
+prop.table(table(train$Sex, train$Survived))
+```
+
+Well that’s not very clean, the proportion table command by default takes each entry in the table and divides by the total number of passengers. What we want to see is the row-wise proportion, ie, the proportion of each sex that survived, as separate groups. So we need to tell the command to give us proportions in the 1st dimension which stands for the rows (using ‘2’ instead would give you column proportions):
+
+```{r}
+prop.table(table(train$Sex, train$Survived),1)
+```
+Almost 74% of females and 18% of males had survived the tragedy.
+Okay, that’s better. We now can see that the majority of females aboard survived, and a very low percentage of males did. In our last prediction we said they all met Davy Jones, so changing our prediction for this new insight should give us a big gain on the leaderboard! Let’s update our old prediction and introduce some more R syntax:
+
+```{r}
+testSimple1 <- test
+testSimple1$Survived <- 0
+testSimple1$Survived[test$Sex=='female'] <- 1
+```
+
+Here we have begun with adding the ‘everyone dies’ prediction column as before, except that we’ll ditch the rep command and just assign the zero to the whole column, it has the same effect. We then altered that same column with 1’s for the subset of passengers where the variable ‘Sex’ is equal to ‘female’.
+We just used two new pieces of R syntax, the equality operator, ==, and the square bracket operator. The square brackets create a subset of the total dataframe, and apply our assignment of ‘1’ to only those rows that meet the criteria specified. The double equals sign no longer works as an assignment here, now it is a boolean test to see if they are already equal.
+
+```{r}
+submit <- data.frame(PassengerId = testSimple1$PassengerId, Survived = testSimple1$Survived)
+write.csv(submit, file = "femalesSurvived.csv", row.names = FALSE)
+```
+
+
+Nice! We are getting there, but let's start digging into the age variable now and its distribution:
+```{r}
+summary(train$Age)
+hist(train$Age)
+```
+
+
+It is possible for values to be missing in data analytics, and this can cause a variety of problems out in the real world that can be quite difficult to deal with at times. For now we could assume that the 177 missing values are the average age of the rest of the passengers, ie. late twenties.
+Our last few tables were on categorical variables, ie. they only had a few values. Now we have a continuous variable which makes drawing proportion tables almost useless, as there may only be one or two passengers for each age! So, let’s create a new variable, Child, to indicate whether the passenger is below the age of 18:
+
+```{r}
+# Create a new variable for Child 
+# 1: child
+# 0: not child
+train$Child <- 0
+train$Child[train$Age < 18] <- 1
+```
+
+Take a look at how children we have on board
+
+```{r}
+table(train$Child)
+```
+
+As with our prediction column, we have now created a new column in the training set dataframe indicating whether the passenger was a child or not. Beginning with the assumption that they were an adult, and then overwriting the value for passengers below the age of 18. To do this we used the less than operator, which is another boolean test, similar to the equality check used in our last predictions. If you click on the train object in the explorer, you will see that any passengers with an age of NA have been assigned a zero, this is because the NA will fail any boolean test. This is what we wanted though, since we had decided to use the average age, which was an adult.
+Now we want to create a table with both gender and age to see the survival proportions for different subsets. Unfortunately our proportion table isn’t equipped for this, so we’re going to have to use a new R command, aggregate. First let’s try to find the number of survivors for the different subsets:
+
+```{r}
+aggregate(Survived ~ Child + Sex, data=train, FUN=sum)
+```
+
+Out of 113 children, 61 had survived where 38 were girls and 23 were boys. 
+
+The aggregate command takes a formula with the target variable on the left hand side of the tilde symbol and the variables to subset over on the right. We then tell it which dataframe to look at with the data argument, and finally what function to apply to these subsets. The command above subsets the whole dataframe over the different possible combinations of the age and gender variables and applies the sum function to the Survived vector for each of these subsets. As our target variable is coded as a 1 for survived, and 0 for not, the result of summing is the number of survivors. But we don’t know the total number of people in each subset; let’s find out:
+
+```{r}
+aggregate(Survived ~ Child + Sex, data=train, FUN=length)
+```
+
+This simply looked at the length of the Survived vector for each subset and output the result, the fact that any of them were 0’s or 1’s was irrelevant for the length function. Now we have the totals for each group of passengers, but really, we would like to know the proportions again. To do this is a little more complicated. We need to create a function that takes the subset vector as input and applies both the sum and length commands to it, and then does the division to give us a proportion. Here is the syntax:
+
+```{r}
+aggregate(Survived ~ Child + Sex, data=train, FUN=function(x) {sum(x)/length(x)})
+```
+
+Well, it still appears that if a passenger is female most survive, and if they were male most don’t, regardless of whether they were a child or not. So we haven’t got anything to change our predictions on here. Let’s take a look at a couple of other potentially interesting variables to see if we can find anything more: the class that they were riding in, and what they paid for their ticket.
+While the class variable is limited to a manageable 3 values, the fare is again a continuous variable that needs to be reduced to something that can be easily tabulated. Let’s bin the fares into less than $10, between $10 and $20, $20 to $30 and more than $30 and store it to a new variable:
+
+```{r}
+train$Fare2 <- '30+'
+train$Fare2[train$Fare < 30 & train$Fare >= 20] <- '20-30'
+train$Fare2[train$Fare < 20 & train$Fare >= 10] <- '10-20'
+train$Fare2[train$Fare < 10] <- '<10'
+```
+
+Now, let's run a longer aggregate function to see if there is anything interesting to work with here:
+
+```{r}
+aggregate(Survived ~ Fare2 + Pclass + Sex, data=train, FUN=function(x) {sum(x)/length(x)})
+```
+
+While the majority of males, regardless of class or fare still don’t do so well, we notice that most of the class 3 women who paid more than $20 for their ticket actually also miss out on a lifeboat, I’ve indicated these with asterisks, but R won’t know what you’re looking for, so they won’t show up in the console.
+It’s a little hard to imagine why someone in third class with an expensive ticket would be worse off in the accident, but perhaps those more expensive cabins were located close to the iceberg impact site, or further from exit stairs? Whatever the cause, let’s make a new prediction based on the new insights.
+
+```{r}
+testSimple2 <- test
+
+# Initial condition: non one survived
+testSimple2$Survived <- 0
+
+# We assume based on data exploration that most female survived
+testSimple2$Survived[test$Sex == 'female'] <- 1
+
+# But with insights, some female did not survive based on the class and fare value
+testSimple2$Survived[test$Sex == 'female' & test$Pclass == 3 & test$Fare >= 20] <- 0
+```
+
+```{r}
+submit <- data.frame(PassengerId = testSimple2$PassengerId, Survived = testSimple2$Survived)
+write.csv(submit, file = "mostFemaleSurvived.csv", row.names = FALSE)
+```
+
+Most of the above code should be familiar to you by now. The only exception would be that there are multiple boolean checks all stringed together for the last adjustment. For more complicated boolean logic, you can combine the logical AND operator & with the logical OR operator |.
+Okay, let’s create the output file and see if we did any better!
+Alright, now we’re getting somewhere! We only improved our accuracy score by 1.5%, but jumped hundreds of spots on the leaderboard! But that was a lot of work, and creating more subsets that dive much deeper would take a lot of time. Next lesson, we will automate this process by using decision trees.
+
+#### Decision Trees
+
+Last lesson, we sliced and diced the data to try and find subsets of the passengers that were more, or less, likely to survive the disaster. We climbed up the leaderboard a great deal, but it took a lot of effort to get there. To find more fine-grained subsets with predictive ability would require a lot of time to adjust our bin sizes and look at the interaction of many different variables. Luckily there is a simple and elegant algorithm that can do this work for us. Today we’re going to use machine learning to build decision trees to do the heavy lifting for us. Decision trees have a number of advantages. They are what’s known as a glass-box model, after the model has found the patterns in the data you can see exactly what decisions will be made for unseen data that you want to predict. They are also intuitive and can be read by people with little experience in machine learning after a brief explanation. Finally, they are the basis for some of the most powerful and popular machine learning algorithms. I won’t get into the mathematics here, but conceptually, the algorithm starts with all of the data at the root node (drawn at the top) and scans all of the variables for the best one to split on. The way it measures this is to make the split on the variable that results in the most pure nodes below it, ie with either the most 1’s or the most 0’s in the resulting buckets. But let’s look at something more familiar to get the idea.
+
+So far, so good. Now let’s travel down the tree branches to the next nodes down the tree. If the passenger was a male, indicated by the boolean choice below the node, you move left, and if female, right. The survival proportions exactly match those we found in tutorial two through our proportion tables. If the passenger was male, only 19% survive, so the bucket votes that everyone here (65% of passengers) perish, while the female bucket votes in the opposite manner, most of them survive as we saw before. In fact, the above decision tree is an exact representation of our gender model from last lesson. The final nodes at the bottom of the decision tree are known as terminal nodes, or sometimes as leaf nodes. After all the boolean choices have been made for a given passenger, they will end up in one of the leaf nodes, and the majority vote of all passengers in that bucket determine how we will predict for new passengers with unknown fates. But you can keep going, and this is what I alluded to at the end of the last lesson. We can grow this tree until every passenger is classified and all the nodes are marked with either 0% or 100% chance of survival… All that chopping and comparing of subsets is taken care of for us in the blink of an eye! Decision trees do have some drawbacks though, they are greedy. They make the decision on the current node which appear to be the best at the time, but are unable to change their minds as they grow new nodes. Perhaps a better, more pure, tree would have been grown if the gender split occurred later? It is really hard to tell, there are a huge number of decisions that could be made, and exploring every possible version of a tree is extremely computationally expensive. This is why the greedy algorithm is used. As an example, imagine a cashier in a make-believe world with a currency including 25c, 15c and 1c coins. The cashier must make change for 30c using the smallest number of coins possible. A greedy algorithm would start with the coin that leaves the smallest amount of change left to pay:
+Greedy: 25 + 1 + 1 + 1 + 1 + 1 = 30c, with 6 coins
+Optimal: 15 + 15 = 30c, with 2 coins
+Clearly the greedy cashier algorithm failed to find the best solution here, and the same is true with decision trees. Though they usually do a great job given their speed and the other advantages we already mentioned, the optimal solution is not guaranteed. Decision trees are also prone to overfitting which requires us to use caution with how deep we grow them as we’ll see later. So, let’s get started with our first real algo! Now we start to open up the power of R: its packages. R is extremely extensible, you’d be hard pressed to find a package that doesn’t automatically do what you need. There’s thousands of options out there written by people who needed the functionality and published their work. You can easily add these packages within R with just a couple of commands. The one we’ll need for this lesson comes with R. It’s called rpart for ‘Recursive Partitioning and Regression Trees’ and uses the CART decision tree algorithm. While rpart comes with base R, you still need to import the functionality each time you want to use it. Go ahead:
+
+```{r}
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+```
+
+Now let’s build our first model. Let’s take a quick review of the possible variables we could look at. Last time we used aggregate and proportion tables to compare gender, age, class and fare. But we never did investigate SibSp, Parch or Embarked. The remaining variables of passenger name, ticket number and cabin number are all unique identifiers for now; they don’t give any new subsets that would be interesting for a decision tree. So let’s build a tree off everything else.
+The format of the rpart command works similarly to the aggregate function we used in tutorial 2. You feed it the equation, headed up by the variable of interest and followed by the variables used for prediction. You then point it at the data, and for now, follow with the type of prediction you want to run (see ?rpart for more info). If you wanted to predict a continuous variable, such as age, you may use method=”anova”. This would run generate decimal quantities for you. But here, we just want a one or a zero, so method=”class” is appropriate:
+
+```{r}
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train, method="class")
+```
+
+Okay, now we’ve got somewhere readable. The decisions that have been found go a lot deeper than what we saw last time when we looked for them manually. Decisions have been found for the SipSp variable, as well as the port of embarkation one that we didn’t even look at. And on the male side, the kids younger than 6 years old have a better chance of survival, even if there weren’t too many aboard. That resonates with the famous naval law we mentioned earlier. It all looks very promising, so let’s send another submission into Kaggle! To make a prediction from this tree doesn’t require all the subsetting and overwriting we did last lesson, it’s actually a lot easier.
+
+#### Predictions
+
+```{r}
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "myfirstdtree.csv", row.names = FALSE)
+```
+Here we have called rpart’s predict function. Here we point the function to the model’s fit object, which contains all of the decisions we see above, and tell it to work its magic on the test dataframe. No need to tell it which variables we originally used in the model-building phase, it automatically looks for them and will certainly let you know if something is wrong. Finally we tell it to again use the class method (for ones and zeros output) and as before write the output to a dataframe and submission file.
+
+Nice! We just jumped hundreds of spots with only an extra 0.5% increase in accuracy! Are you getting the picture here? The higher you climb in a Kaggle leaderboard, the more important these fractional percentage bumps become. The rpart package automatically caps the depth that the tree grows by using a metric called complexity which stops the resulting model from getting too out of hand. But we already saw that a more complex model than what we made ourselves did a bit better, so why not go all out and override the defaults? Let’s do it. You can find the default limits by typing ?rpart.control. The first one we want to unleash is the cp parameter, this is the metric that stops splits that aren’t deemed important enough. The other one we want to open up is minsplit which governs how many passengers must sit in a bucket before even looking for a split. Let’s max both out and reduce cp to zero and minsplit to 2 (no split would obviously be possible for a single passenger in a bucket):
+
+```{r}
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train,
+             method="class", control=rpart.control(minsplit=2, cp=0))
+fancyRpartPlot(fit)
+```
+
+Even our simple gender model did better! What went wrong? Welcome to overfitting. Overfitting is technically defined as a model that performs better on a training set than another simpler model, but does worse on unseen data, as we saw here. We went too far and grew our decision tree out to encompass massively complex rules that may not generalize to unknown passengers. Perhaps that 34 year old female in third class who paid $20.17 for a ticket from Southampton with a sister and mother aboard may have been a bit of a rare case after all. The point of this exercise was that you must use caution with decision trees. While this particular tree may have been 100% accurate on the data that you trained it on, even a trivial tree with only one rule could beat it on unseen data. You just overfit big time! Use caution with decision trees, and any other algorithm actually, or you can find yourself making rules from the noise you’ve mistaken for signal! Before moving on, I encourage you to have a play with the various control parameters we saw in the rpart.control help file. Perhaps you can find a tree that does a little better by either growing it out further, or reigning it in. You can also manually trim trees in R with these commands:
+
+```{r}
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train,
+             method="class", control=rpart.control( your controls ))
+new.fit <- prp(fit,snip=TRUE)$obj
+fancyRpartPlot(new.fit)
+```
+An interactive version of the decision tree will appear in the plot tab where you simply click on the nodes that you want to kill. Once you’re satisfied with the tree, hit ‘quit’ and it will be stored to the new.fit object. Try to look for overly complex decisions being made, and kill the nodes that appear to go to far.
+
+### Part 4: eatures Engineering
+
+Feature engineering is so important to how your model performs, that even a simple model with great features can outperform a complicated algorithm with poor ones. In fact, feature engineering has been described as “easily the most important factor” in determining the success or failure of your predictive model. Feature engineering really boils down to the human element in machine learning. How much you understand the data, with your human intuition and creativity, can make the difference. 
+
+So what is feature engineering? It can mean many things to different problems, but in the Titanic competition it could mean chopping, and combining different attributes that we were given by the good folks at Kaggle to squeeze a little bit more value from them. In general, an engineered feature may be easier for a machine learning algorithm to digest and make rules from than the variables it was derived from. 
+
+The initial suspects for gaining more machine learning mojo from are the three text fields that we never sent into our decision trees last time. While the ticket number, cabin, and name were all unique to each passenger; perhaps parts of those text strings could be extracted to build a new predictive attribute. Let’s start with the name field. If we take a glance at the first passenger’s name we see the following:
+
+```{r}
+train$Name[1]
+```
+
+Previously we have only accessed passenger groups by subsetting, now we access an individual by using the row number, 1, as an index instead. Okay, no one else on the boat had that name, that’s pretty much certain, but what else might they have shared? Well, I’m sure there were plenty of Mr’s aboard. Perhaps the persons title might give us a little more insight.
+If we scroll through the dataset we see many more titles including Miss, Mrs, Master, and even the Countess! The title ‘Master’ is a bit outdated now, but back in these days, it was reserved for unmarried boys. Additionally, the nobility such as our Countess would probably act differently to the lowly proletariat too. There seems to be a fair few possibilities of patterns in this that may dig deeper than the combinations of age, gender, etc that we looked at before. In order to extract these titles to make new variables, we’ll need to perform the same actions on both the training and testing set, so that the features are available for growing our decision trees, and making predictions on the unseen testing data. An easy way to perform the same processes on both datasets at the same time is to merge them. In R we can use rbind, which stands for row bind, so long as both dataframes have the same columns as each other. Since we obviously lack the Survived column in our test set, let’s create one full of missing values (NAs) and then row bind the two datasets together:
+
+```{r}
+test2 <- test
+test2$Survived <- NA
+train2 <- train[-c(13,14)] # remove non-needed columns for this analysis
+combi <- rbind(train2, test2)
+```
+Now we have a new dataframe called combi with all the same rows as the two original datasets, stacked in the order in which we specified: train frist and test second.
+
+If you look back at the output of our inquiry on Owen, his name is still encoded as a factor. As we mentioned earlier in the tutorial series, strings are automatically imported as factors in R, even if it doesn’t make sense. So we need to cast this column back into a text string. To do this we use as.character. Let’s do this and then take another look at Owen:
+
+```{r}
+combi$Name <- as.character(combi$Name)
+combi$Name[1]
+```
+
+Excellent, no more levels, now it’s just pure text. In order to break apart a string, we need some hooks to tell the program to look for. Nicely, we see that there is a comma right after the person’s last name, and a full stop after their title. We can easily use the function strsplit, which stands for string split, to break apart our original name over these two symbols. Let’s try it out on Mr. Braund:
+
+```{r}
+strsplit(combi$Name[1], split='[,.]')
+```
+
+Okay, good. Here we have sent strsplit the cell of interest, and given it some symbols to chose from when splitting the string up, either a comma or period. Those symbols in the square brackets are called regular expressions, though this is a very simple one, and if you plan on working with a lot of text I would certainly recommend getting used to using them!
+
+We see that the title has been broken out on its own, though there’s a strange space before it begins because the comma occurred at the end of the surname. But how do we get to that title piece and clear out the rest of the stuff we don’t want? An index [[1]] is printed before the text portions. Let’s try to dig into this new type of container by appending all those square brackets to the original command:
+
+```{r}
+strsplit(combi$Name[1], split='[,.]')[[1]]
+```
+
+Getting there! String split uses a doubly stacked matrix because it can never be sure that a given regex will have the same number of pieces. If there were more commas or periods in the name, it would create more segments, so it hides them a level deeper to maintain the rectangular types of containers that we are used to in things like spreadsheets, or now dataframes! Let’s go a level deeper into the indexing mess and extract the title. It’s the second item in this nested list, so let’s dig in to index number 2 of this new container:
+
+```{r}
+strsplit(combi$Name[1], split='[,.]')[[1]][2]
+```
+
+
+Great. We have isolated the title we wanted at last. But how to apply this transformation to every row of the combined train/test dataframe? Luckily, R has some extremely useful functions that apply more complication functions one row at a time. As we had to dig into this container to get the title, simply trying to run combi$Title <- strsplit(combi$Name, split='[,.]')[[1]][2] over the whole name vector would result in all of our rows having the same value of Mr., so we need to work a bit harder. Unsurprisingly applying a function to a lot of cells in a dataframe or vector uses the apply suite of functions of R:
+
+```{r}
+# return 2nd title field in the string 
+function(x) {  
+    strsplit(x, split='[,.]')[[1]][2]
+}
+
+```
+
